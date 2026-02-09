@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/gin-gonic/gin v1.9.0
 	github.com/jackc/pgx/v4 v4.18.1
+	github.com/joho/godotenv v1.5.1
 )
 
 require (

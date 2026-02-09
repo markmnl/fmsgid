@@ -4,11 +4,23 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/joho/godotenv"
 )
+
+func init() {
+	// Load .env file if present (ignore error if not found)
+	_ = godotenv.Load()
+
+	// Set GIN_MODE from env if not already set
+	if mode := os.Getenv("GIN_MODE"); mode != "" {
+		gin.SetMode(mode)
+	}
+}
 
 const (
 	TypeRecv = 1
