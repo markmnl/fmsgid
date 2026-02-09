@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v4"
@@ -82,7 +83,27 @@ func getAddressDetail(c *gin.Context) {
 	addr, hasAddr := c.Params.Get("address")
 	if !hasAddr {
 		c.AbortWithStatus(400)
+		return
 	}
+
+	// validate address is in fmsg format: @user@example.com
+	if len(addr) < 3 || addr[0] != '@' {
+		c.AbortWithStatus(400)
+		return
+	}
+	atIdx := strings.Index(addr, "@")
+	if atIdx <= 1 || atIdx == len(addr)-1 {
+		c.AbortWithStatus(400)
+		return
+	}
+	dotIdx := strings.LastIndex(addr, ".")
+	if dotIdx <= atIdx+1 || dotIdx == len(addr)-1 {
+		c.AbortWithStatus(400)
+		return
+	}
+
+	// collapse address to lowercase
+	addr = strings.ToLower(addr)
 
 	rows, err := pool.Query(ctx, sqlSelectAddressDetail, addr)
 	if err != nil {

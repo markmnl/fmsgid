@@ -15,54 +15,54 @@ const sqlSelectAddressDetail string = `select
 from
 	address
 where
-	address = $1;`
+	address_lower = $1;`
 
 const sqlInsertTx string = `insert into address_tx (address, ts, type, size) VALUES ($1, to_timestamp($2), $3, $4);`
 
 const sqlActuals string = `with sent_totals as (
 	select
-		address
+		address_lower
 		, sum(size)	sent_size_total
 	from
 		address_tx
 	where
-		op = 'send'
+		type = 2
 	group by
 		address
 ), sent_1d as (
 	select
-		address
+		address_lower
 		, count(*)	sent_count_1d
 		, sum(size)	sent_size_1d
 	from
 		address_tx
 	where
-		op = 'send'
+		type = 2
 		and now() - ts < interval '1 day'
 	group by
-		address
+		address_lower
 ), recv_totals as (
 	select
-		address
+		address_lower
 		, sum(size)	recv_size_total
 	from
 		address_tx
 	where
-		op = 'recv'
+		type = 1
 	group by
-		address
+		address_lower
 ), recv_1d as (
 	select
-		address
+		address_lower
 		, count(*)	recv_count_1d
 		, sum(size)	recv_size_1d
 	from
 		address_tx
 	where
-		op = 'recv'
+		type = 1
 		and now() - ts < interval '1 day'
 	group by
-		address
+		address_lower
 )
 select
 	st.sent_size_total
@@ -77,4 +77,4 @@ from
 	inner join recv_totals rt on st.address = rt.address
 	inner join recv_1d rd on st.address = rd.address
 where
-	st.address = $1;`
+	st.address_lower = $1;`
