@@ -17,7 +17,7 @@ from
 where
 	address = $1;`
 
-const sqlInsertTx string = `insert into address_tx (address, ts, op, size) VALUES ($1, to_timestamp($2), $3, $4);`
+const sqlInsertTx string = `insert into address_tx (address, ts, type, size) VALUES ($1, to_timestamp($2), $3, $4);`
 
 const sqlActuals string = `with sent_totals as (
 	select
