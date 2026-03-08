@@ -91,13 +91,8 @@ func getAddressDetail(c *gin.Context) {
 		c.AbortWithStatus(400)
 		return
 	}
-	atIdx := strings.Index(addr, "@")
-	if atIdx <= 1 || atIdx == len(addr)-1 {
-		c.AbortWithStatus(400)
-		return
-	}
-	dotIdx := strings.LastIndex(addr, ".")
-	if dotIdx <= atIdx+1 || dotIdx == len(addr)-1 {
+	atCount := strings.Count(addr, "@")
+	if atCount != 2 {
 		c.AbortWithStatus(400)
 		return
 	}
@@ -190,11 +185,15 @@ func main() {
 		log.Fatalf("ERROR: Failed to initDb: %s", err)
 	}
 	log.Println("INFO: Database initalized")
+	port := os.Getenv("FMSGID_PORT")
+	if port == "" {
+		port = "8080"
+	}
 	r := gin.Default()
 	r.GET("/addr/:address", getAddressDetail)
 	r.POST("/addr/send", postAddressTxSend)
 	r.POST("/addr/recv", postAddressTxRecv)
-	err = r.Run(":8080")
+	err = r.Run(":" + port)
 	if err != nil {
 		log.Fatalf("ERROR: Running gin engine: %s", err)
 	}

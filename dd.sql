@@ -29,9 +29,8 @@ create table if not exists address_tx (
 	primary key (address_lower, ts)
 );
 
-create index address_tx_addr_ts_desc
-on address_tx (address_lower, ts desc);
-
+create index address_tx_addr_type_ts
+on address_tx (address_lower, type, ts desc);
 
 alter table address_tx set (
     autovacuum_vacuum_scale_factor = 0.01,
