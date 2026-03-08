@@ -10,6 +10,7 @@ PostgreSQL environment variables must be set for the database to use, refer to: 
 
 ```
 GIN_MODE=release
+FMSGID_PORT=8080
 ```
 
 ## Running
@@ -27,22 +28,8 @@ To build and run the Go program locally:
 From the `src` directory:
 
 ```
-go build
+go build .
 ```
 
 This will produce an executable named `fmsgid` (or `fmsgid.exe` on Windows).
 
-### Run
-
-Set the required environment variables (see Environment section above), then run:
-
-```
-./fmsgid
-```
-
-Or on Windows:
-```
-fmsgid.exe
-```
-
-The server will start on port 8080 by default.
