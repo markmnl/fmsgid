@@ -34,4 +34,12 @@ PostgreSQL database with tables created from `dd.sql` is required. The database 
 ./fmsgid
 ```
 
+## API Routes
 
+All routes are served over HTTPS under the `/fmsgid` path.
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/fmsgid/:address` | Lookup an fmsg address and return its details including display name, quotas, and usage. The address must be in fmsg format (`@user@example.com`). Returns `AddressDetail` JSON on success, `400` if the address is invalid, `404` if not found. |
+| `POST` | `/fmsgid/send` | Record a send transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. |
+| `POST` | `/fmsgid/recv` | Record a receive transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. |
