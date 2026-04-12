@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/joho/godotenv"
+	"golang.org/x/text/cases"
 )
 
 func init() {
@@ -97,8 +98,8 @@ func getAddressDetail(c *gin.Context) {
 		return
 	}
 
-	// collapse address to lowercase
-	addr = strings.ToLower(addr)
+	// collapse address using Unicode case folding
+	addr = cases.Fold().String(addr)
 
 	rows, err := pool.Query(ctx, sqlSelectAddressDetail, addr)
 	if err != nil {
@@ -190,9 +191,9 @@ func main() {
 		port = "8080"
 	}
 	r := gin.Default()
-	r.GET("/addr/:address", getAddressDetail)
-	r.POST("/addr/send", postAddressTxSend)
-	r.POST("/addr/recv", postAddressTxRecv)
+	r.GET("/fmsgid/:address", getAddressDetail)
+	r.POST("/fmsgid/send", postAddressTxSend)
+	r.POST("/fmsgid/recv", postAddressTxRecv)
 	err = r.Run(":" + port)
 	if err != nil {
 		log.Fatalf("ERROR: Running gin engine: %s", err)
