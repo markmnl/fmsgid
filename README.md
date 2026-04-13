@@ -48,7 +48,7 @@ When `FMSGID_CSV_FILE` is set, fmsgid reads the CSV file at startup and watches 
 - Addresses in the CSV are **upserted** (created or updated).
 - Addresses in the database but **not** in the CSV have `accepting_new` set to `false` (they are not deleted).
 
-The CSV must have a header row. Column names correspond to the `address` table columns. Only the `address` column is required; all others are optional and use the same defaults as the table (`accepting_new` defaults to `true`, limit columns default to `-1`).
+The CSV must have a header row. Column names correspond to the `address` table columns. Only the `address` column is required; all others are optional and use the same defaults as the table.
 
 To get started, copy the example file and edit it with your addresses:
 
@@ -65,14 +65,14 @@ Available columns:
 | `address` | yes | | fmsg address (e.g. `@alice@example.com`) |
 | `display_name` | no | _(empty)_ | Display name |
 | `accepting_new` | no | `true` | Whether the address accepts new messages |
-| `limit_recv_size_total` | no | `-1` | Total received size limit (bytes, `-1` = unlimited) |
-| `limit_recv_size_per_msg` | no | `-1` | Max size per received message |
-| `limit_recv_size_per_1d` | no | `-1` | Received size limit per day |
-| `limit_recv_count_per_1d` | no | `-1` | Received message count limit per day |
-| `limit_send_size_total` | no | `-1` | Total sent size limit |
-| `limit_send_size_per_msg` | no | `-1` | Max size per sent message |
-| `limit_send_size_per_1d` | no | `-1` | Sent size limit per day |
-| `limit_send_count_per_1d` | no | `-1` | Sent message count limit per day |
+| `limit_recv_size_total` | no | `102400000` | Total received size limit (bytes) |
+| `limit_recv_size_per_msg` | no | `10240` | Max size per received message |
+| `limit_recv_size_per_1d` | no | `102400` | Received size limit per day |
+| `limit_recv_count_per_1d` | no | `1000` | Received message count limit per day |
+| `limit_send_size_total` | no | `102400000` | Total sent size limit |
+| `limit_send_size_per_msg` | no | `10240` | Max size per sent message |
+| `limit_send_size_per_1d` | no | `102400` | Sent size limit per day |
+| `limit_send_count_per_1d` | no | `1000` | Sent message count limit per day |
 
 See `addresses.csv.example` for a complete example with all columns.
 

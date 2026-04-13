@@ -79,11 +79,11 @@ func TestParseCSV_AddressOnly(t *testing.T) {
 	if r.AcceptingNew != true {
 		t.Errorf("AcceptingNew should default to true, got %v", r.AcceptingNew)
 	}
-	if r.LimitRecvSizeTotal != -1 {
-		t.Errorf("LimitRecvSizeTotal should default to -1, got %d", r.LimitRecvSizeTotal)
+	if r.LimitRecvSizeTotal != 102400000 {
+		t.Errorf("LimitRecvSizeTotal should default to 102400000, got %d", r.LimitRecvSizeTotal)
 	}
-	if r.LimitSendSizePerMsg != -1 {
-		t.Errorf("LimitSendSizePerMsg should default to -1, got %d", r.LimitSendSizePerMsg)
+	if r.LimitSendSizePerMsg != 10240 {
+		t.Errorf("LimitSendSizePerMsg should default to 10240, got %d", r.LimitSendSizePerMsg)
 	}
 }
 
@@ -120,13 +120,17 @@ func TestParseCSV_Defaults(t *testing.T) {
 	if r.AcceptingNew != true {
 		t.Errorf("AcceptingNew should default to true")
 	}
-	limits := []int64{
+	expectedDefaults := []int64{
+		102400000, 10240, 102400, 1000,
+		102400000, 10240, 102400, 1000,
+	}
+	actuals := []int64{
 		r.LimitRecvSizeTotal, r.LimitRecvSizePerMsg, r.LimitRecvSizePer1d, r.LimitRecvCountPer1d,
 		r.LimitSendSizeTotal, r.LimitSendSizePerMsg, r.LimitSendSizePer1d, r.LimitSendCountPer1d,
 	}
-	for i, v := range limits {
-		if v != -1 {
-			t.Errorf("limit[%d] should default to -1, got %d", i, v)
+	for i, v := range actuals {
+		if v != expectedDefaults[i] {
+			t.Errorf("limit[%d] should default to %d, got %d", i, expectedDefaults[i], v)
 		}
 	}
 }
@@ -217,9 +221,9 @@ Carol,4096,@carol@example.com,false
 	if r.LimitSendSizePerMsg != 4096 {
 		t.Errorf("LimitSendSizePerMsg = %d", r.LimitSendSizePerMsg)
 	}
-	// Unspecified limits should still be -1
-	if r.LimitRecvSizeTotal != -1 {
-		t.Errorf("LimitRecvSizeTotal should be -1, got %d", r.LimitRecvSizeTotal)
+	// Unspecified limits should use defaults
+	if r.LimitRecvSizeTotal != 102400000 {
+		t.Errorf("LimitRecvSizeTotal should be 102400000, got %d", r.LimitRecvSizeTotal)
 	}
 }
 

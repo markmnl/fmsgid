@@ -87,14 +87,14 @@ func parseCSV(filePath string) ([]addressRow, error) {
 			Address:             addr,
 			AddressLower:        fold.String(addr),
 			AcceptingNew:        true,
-			LimitRecvSizeTotal:  -1,
-			LimitRecvSizePerMsg: -1,
-			LimitRecvSizePer1d:  -1,
-			LimitRecvCountPer1d: -1,
-			LimitSendSizeTotal:  -1,
-			LimitSendSizePerMsg: -1,
-			LimitSendSizePer1d:  -1,
-			LimitSendCountPer1d: -1,
+			LimitRecvSizeTotal:  102400000,
+			LimitRecvSizePerMsg: 10240,
+			LimitRecvSizePer1d:  102400,
+			LimitRecvCountPer1d: 1000,
+			LimitSendSizeTotal:  102400000,
+			LimitSendSizePerMsg: 10240,
+			LimitSendSizePer1d:  102400,
+			LimitSendCountPer1d: 1000,
 		}
 
 		if idx, ok := colIdx["display_name"]; ok && idx < len(record) {
