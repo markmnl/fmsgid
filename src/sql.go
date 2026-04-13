@@ -37,7 +37,7 @@ on conflict (address_lower) do update set
 	limit_send_size_per_1d = excluded.limit_send_size_per_1d,
 	limit_send_count_per_1d = excluded.limit_send_count_per_1d;`
 
-// sqlDisableAbsentAddresses is used with a dynamically built WHERE clause
+// sqlDisableAbsentAddresses disables addresses not present in the provided parameter array.
 const sqlDisableAbsentAddresses string = `update address set accepting_new = false where address_lower != ALL($1);`
 
 const sqlActuals string = `select
