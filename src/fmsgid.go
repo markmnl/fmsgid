@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/joho/godotenv"
 	"golang.org/x/text/cases"
 )
+
+var pool *pgxpool.Pool
 
 func init() {
 	// Load .env file if present (ignore error if not found)
@@ -56,29 +57,17 @@ type AddressDetail struct {
 	Tags                []string `json:"tags"`
 }
 
-func testDb() error {
-	ctx := context.Background()
-	db, err := pgx.Connect(ctx, "")
+func initPool() error {
+	var err error
+	pool, err = pgxpool.Connect(context.Background(), "")
 	if err != nil {
 		return err
 	}
-	defer db.Close(ctx)
-	err = db.Ping(ctx)
-	if err != nil {
-		return err
-	}
-	// TODO check at least tables exist
-	return nil
+	return pool.Ping(context.Background())
 }
 
 func getAddressDetail(c *gin.Context) {
 	ctx := c.Request.Context()
-
-	pool, err := pgxpool.Connect(ctx, "")
-	if err != nil {
-		c.AbortWithError(500, err)
-	}
-	defer pool.Close()
 
 	// TODO move data to body to hide
 	addr, hasAddr := c.Params.Get("address")
@@ -165,12 +154,6 @@ func postAddressTx(c *gin.Context, typ int) {
 		return
 	}
 
-	pool, err := pgxpool.Connect(ctx, "")
-	if err != nil {
-		c.AbortWithError(500, err)
-	}
-	defer pool.Close()
-
 	_, err = pool.Exec(ctx, sqlInsertTx, tx.Address, tx.Timestamp, typ, tx.Size)
 	if err != nil {
 		c.AbortWithError(500, err)
@@ -181,11 +164,21 @@ func postAddressTx(c *gin.Context, typ int) {
 
 func main() {
 	log.SetPrefix("fmsgid: ")
-	err := testDb()
+	err := initPool()
 	if err != nil {
-		log.Fatalf("ERROR: Failed to initDb: %s", err)
+		log.Fatalf("ERROR: Failed to connect to database: %s", err)
 	}
-	log.Println("INFO: Database initalized")
+	defer pool.Close()
+	log.Println("INFO: Database initialized")
+
+	// Start CSV sync if configured
+	csvFile := os.Getenv("FMSGID_CSV_FILE")
+	if csvFile != "" {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go startCSVWatcher(ctx, pool, csvFile)
+	}
+
 	port := os.Getenv("FMSGID_PORT")
 	if port == "" {
 		port = "8080"

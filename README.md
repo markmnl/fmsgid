@@ -15,7 +15,14 @@ See .env.example for a list of environment variables which can be copied to a `.
 ```
 GIN_MODE=release
 FMSGID_PORT=8080
+FMSGID_CSV_FILE=/path/to/addresses.csv
 ```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GIN_MODE` | Gin framework mode (`release`, `debug`, `test`) | `debug` |
+| `FMSGID_PORT` | Port to listen on | `8080` |
+| `FMSGID_CSV_FILE` | Path to a CSV file to sync addresses from. When set, fmsgid watches the file for changes and automatically syncs the `address` table. When unset, CSV sync is disabled. | _(unset)_ |
 
 ## Build
 
@@ -33,6 +40,41 @@ PostgreSQL database with tables created from `dd.sql` is required. The database 
 ```
 ./fmsgid
 ```
+
+## CSV Identity Provider
+
+When `FMSGID_CSV_FILE` is set, fmsgid reads the CSV file at startup and watches it for changes using filesystem notifications. On each change the `address` table is synced:
+
+- Addresses in the CSV are **upserted** (created or updated).
+- Addresses in the database but **not** in the CSV have `accepting_new` set to `false` (they are not deleted).
+
+The CSV must have a header row. Column names correspond to the `address` table columns. Only the `address` column is required; all others are optional and use the same defaults as the table.
+
+To get started, copy the example file and edit it with your addresses:
+
+```
+cp addresses.csv.example addresses.csv
+```
+
+Then set `FMSGID_CSV_FILE=addresses.csv` in your `.env` file (or environment).
+
+Available columns:
+
+| Column | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `address` | yes | | fmsg address (e.g. `@alice@example.com`) |
+| `display_name` | no | _(empty)_ | Display name |
+| `accepting_new` | no | `true` | Whether the address accepts new messages |
+| `limit_recv_size_total` | no | `102400000` | Total received size limit (bytes) |
+| `limit_recv_size_per_msg` | no | `10240` | Max size per received message |
+| `limit_recv_size_per_1d` | no | `102400` | Received size limit per day |
+| `limit_recv_count_per_1d` | no | `1000` | Received message count limit per day |
+| `limit_send_size_total` | no | `102400000` | Total sent size limit |
+| `limit_send_size_per_msg` | no | `10240` | Max size per sent message |
+| `limit_send_size_per_1d` | no | `102400` | Sent size limit per day |
+| `limit_send_count_per_1d` | no | `1000` | Sent message count limit per day |
+
+See `addresses.csv.example` for a complete example with all columns.
 
 ## API Routes
 

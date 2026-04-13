@@ -1,0 +1,3 @@
+address,display_name,accepting_new,limit_recv_size_total,limit_recv_size_per_msg,limit_recv_size_per_1d,limit_recv_count_per_1d,limit_send_size_total,limit_send_size_per_msg,limit_send_size_per_1d,limit_send_count_per_1d
+@alice@example.com,Alice,true,102400000,10240,102400,1000,102400000,10240,102400,1000
+@bob@example.com,Bob,true,102400000,10240,102400,1000,102400000,10240,102400,1000
