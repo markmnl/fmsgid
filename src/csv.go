@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -193,10 +195,13 @@ func syncCSV(ctx context.Context, pool *pgxpool.Pool, addresses []addressRow) er
 }
 
 // startCSVWatcher performs an initial CSV sync and then watches the file for changes,
-// re-syncing on each write. It blocks until the context is cancelled.
+// re-syncing on each write or replace. It blocks until the context is cancelled.
 func startCSVWatcher(ctx context.Context, pool *pgxpool.Pool, filePath string) {
-	// Initial sync
+	// mu serializes concurrent sync calls that may be triggered by the debounce timer.
+	var mu sync.Mutex
 	doSync := func() {
+		mu.Lock()
+		defer mu.Unlock()
 		addresses, err := parseCSV(filePath)
 		if err != nil {
 			log.Printf("ERROR: CSV parse: %s", err)
@@ -218,8 +223,13 @@ func startCSVWatcher(ctx context.Context, pool *pgxpool.Pool, filePath string) {
 	}
 	defer watcher.Close()
 
-	if err := watcher.Add(filePath); err != nil {
-		log.Printf("ERROR: Watching CSV file %s: %s", filePath, err)
+	// Watch the parent directory so that atomic renames (used by many editors
+	// and tools) trigger events even when the original inode is replaced.
+	dir := filepath.Dir(filePath)
+	base := filepath.Base(filePath)
+
+	if err := watcher.Add(dir); err != nil {
+		log.Printf("ERROR: Watching directory %s: %s", dir, err)
 		return
 	}
 
@@ -235,7 +245,11 @@ func startCSVWatcher(ctx context.Context, pool *pgxpool.Pool, filePath string) {
 			if !ok {
 				return
 			}
-			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+			// Filter to events on our target file only.
+			if filepath.Base(event.Name) != base {
+				continue
+			}
+			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) != 0 {
 				// Debounce: wait 500ms after last event before syncing
 				if debounce != nil {
 					debounce.Stop()
