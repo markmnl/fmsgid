@@ -90,12 +90,12 @@ All routes are served over HTTPS under the `/fmsgid` path.
 
 An example systemd service to run fmsgid as a service on startup
 
-ASSUMES: 
+ASSUMES:
 * Directory `/opt/fmsgid` has been created and contains built executable: `fmsgid`
 * Text file `/opt/fmsgid/env` exists containing environment variables (example below)
 * User `fmsg` has been created and has
     - read and execute permissions to `/opt/fmsgid/`, e.g. with `chown -R fmsg:fmsg /opt/fmsgid` after `mkdir /opt/fmsgid`
-    - write permissions to FMSG_DATA_DIR
+    - write permissions to `/opt/fmsgid` and to the path specified by `FMSGID_CSV_FILE` if it is outside `/opt/fmsgid`
 
 `/etc/systemd/system/fmsgid.service`
 
