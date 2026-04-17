@@ -85,3 +85,74 @@ All routes are served over HTTPS under the `/fmsgid` path.
 | `GET` | `/fmsgid/:address` | Lookup an fmsg address and return its details including display name, quotas, and usage. The address must be in fmsg format (`@user@example.com`). Returns `AddressDetail` JSON on success, `400` if the address is invalid, `404` if not found. |
 | `POST` | `/fmsgid/send` | Record a send transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. |
 | `POST` | `/fmsgid/recv` | Record a receive transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. |
+
+### systemd
+
+An example systemd service to run fmsgid as a service on startup
+
+ASSUMES:
+* Directory `/opt/fmsgid` has been created and contains built executable: `fmsgid`
+* Text file `/opt/fmsgid/env` exists containing environment variables (example below)
+* User `fmsg` has been created and has
+    - read and execute permissions to `/opt/fmsgid/`, e.g. with `chown -R fmsg:fmsg /opt/fmsgid` after `mkdir /opt/fmsgid`
+    - write permissions to `/opt/fmsgid` and to the path specified by `FMSGID_CSV_FILE` if it is outside `/opt/fmsgid`
+
+`/etc/systemd/system/fmsgid.service`
+
+```
+[Unit]
+Description=fmsgid HTTP API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+User=fmsg
+Group=fmsg
+
+EnvironmentFile=/opt/fmsgid/env
+
+ExecStart=/opt/fmsgid/fmsgid
+WorkingDirectory=/opt/fmsgid
+
+Restart=on-failure
+RestartSec=3
+
+# --- Filesystem access ---
+ReadWritePaths=/opt/fmsgid
+PrivateTmp=true
+
+# --- Hardening ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+# --- Logging ---
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### env
+
+```
+GIN_MODE=release
+FMSGID_PORT=8080
+FMSGID_CSV_FILE=addresses.csv
+
+PGHOST=127.0.0.1
+PGPORT=5432
+PGUSER=
+PGPASSWORD=
+PGDATABASE=fmsgid
+```
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable fmsgid
+sudo systemctl start fmsgid
+```
