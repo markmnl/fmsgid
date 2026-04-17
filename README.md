@@ -121,6 +121,7 @@ RestartSec=3
 
 # --- Filesystem access ---
 ReadWritePaths=/opt/fmsgid
+PrivateTmp=true
 
 # --- Hardening ---
 NoNewPrivileges=true
