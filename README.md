@@ -113,7 +113,7 @@ Group=fmsg
 
 EnvironmentFile=/opt/fmsgid/env
 
-ExecStart=/opt/fmsgid/fmsgid 0.0.0.0
+ExecStart=/opt/fmsgid/fmsgid
 WorkingDirectory=/opt/fmsgid
 
 Restart=on-failure
