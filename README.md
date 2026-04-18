@@ -2,7 +2,7 @@
 
 # fmsgid
 
-fmsgid is an implementation of the [https://github.com/markmnl/fmsg/blob/main/standards/fmsgid.md](fmsg Id standard) written in Go! An fmsg host uses this API to determine if an address exists and lookup associated attributes such as display name and message quotas.
+fmsgid is an implementation of the [FMSG-002 Id Standard](https://github.com/markmnl/fmsg/blob/main/standards/fmsg-002-id.md) written in Go! An fmsg host uses this API to determine if an address exists and lookup associated attributes such as display name and message quotas.
 
 ## Goals
 
