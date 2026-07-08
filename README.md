@@ -83,6 +83,7 @@ All routes are served over HTTPS under the `/fmsgid` path.
 | Method | Route | Description |
 |--------|-------|-------------|
 | `GET` | `/fmsgid/:address` | Lookup an fmsg address and return its details including display name, quotas, and usage. The address must be in fmsg format (`@user@example.com`). Returns `AddressDetail` JSON on success, `400` if the address is invalid, `404` if not found. |
+| `POST` | `/fmsgid` | Register a new address with default quotas, idempotently. Accepts a JSON body with `address` and optional `display_name`. Returns `201` if the address was created, `200` if it already existed (never modifies an existing row — use CSV sync to change quotas or `accepting_new` on an existing address), `400` if the address is invalid. |
 | `POST` | `/fmsgid/send` | Record a send transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. |
 | `POST` | `/fmsgid/recv` | Record a receive transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. |
 
