@@ -36,6 +36,11 @@ type AddressTx struct {
 	Size      int     `json:"size"`
 }
 
+type CreateAddressReq struct {
+	Address     string `json:"address"`
+	DisplayName string `json:"display_name"`
+}
+
 type AddressDetail struct {
 	Address             string   `json:"address"`
 	DisplayName         string   `json:"displayName"`
@@ -66,6 +71,14 @@ func initPool() error {
 	return pool.Ping(context.Background())
 }
 
+// isValidFmsgAddr reports whether addr is in fmsg format: @user@example.com
+func isValidFmsgAddr(addr string) bool {
+	if len(addr) < 3 || addr[0] != '@' {
+		return false
+	}
+	return strings.Count(addr, "@") == 2
+}
+
 func getAddressDetail(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -76,13 +89,7 @@ func getAddressDetail(c *gin.Context) {
 		return
 	}
 
-	// validate address is in fmsg format: @user@example.com
-	if len(addr) < 3 || addr[0] != '@' {
-		c.AbortWithStatus(400)
-		return
-	}
-	atCount := strings.Count(addr, "@")
-	if atCount != 2 {
+	if !isValidFmsgAddr(addr) {
 		c.AbortWithStatus(400)
 		return
 	}
@@ -135,6 +142,39 @@ func getAddressDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, ad)
 }
 
+// postCreateAddress registers a new address with default quotas, idempotently.
+// It never modifies an address that already exists — use CSV sync to change
+// quotas or accepting_new on an existing address.
+func postCreateAddress(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	var req CreateAddressReq
+	if err := c.BindJSON(&req); err != nil {
+		log.Printf("WARN: Parsing CreateAddressReq: %s\n", err)
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+
+	if !isValidFmsgAddr(req.Address) {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+
+	addrLower := cases.Fold().String(req.Address)
+
+	tag, err := pool.Exec(ctx, sqlInsertAddressIfNotExists, addrLower, req.Address, req.DisplayName)
+	if err != nil {
+		c.AbortWithError(500, err)
+		return
+	}
+
+	if tag.RowsAffected() == 0 {
+		c.Status(http.StatusOK)
+		return
+	}
+	c.Status(http.StatusCreated)
+}
+
 func postAddressTxSend(c *gin.Context) {
 	postAddressTx(c, TypeSend)
 }
@@ -185,6 +225,7 @@ func main() {
 	}
 	r := gin.Default()
 	r.GET("/fmsgid/:address", getAddressDetail)
+	r.POST("/fmsgid", postCreateAddress)
 	r.POST("/fmsgid/send", postAddressTxSend)
 	r.POST("/fmsgid/recv", postAddressTxRecv)
 	err = r.Run(":" + port)

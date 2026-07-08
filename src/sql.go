@@ -40,6 +40,16 @@ on conflict (address_lower) do update set
 // sqlDisableAbsentAddresses disables addresses not present in the provided parameter array.
 const sqlDisableAbsentAddresses string = `update address set accepting_new = false where address_lower != ALL($1);`
 
+// sqlInsertAddressIfNotExists registers a new address with default quotas.
+// It never modifies an existing row — callers that need to update quotas or
+// accepting_new should use sqlUpsertAddress (e.g. the CSV sync path) instead.
+const sqlInsertAddressIfNotExists string = `insert into address (
+	address_lower, address, display_name, accepting_new,
+	limit_recv_size_total, limit_recv_size_per_msg, limit_recv_size_per_1d, limit_recv_count_per_1d,
+	limit_send_size_total, limit_send_size_per_msg, limit_send_size_per_1d, limit_send_count_per_1d
+) values ($1, $2, $3, true, 102400000, 10240, 102400, 1000, 102400000, 10240, 102400, 1000)
+on conflict (address_lower) do nothing;`
+
 const sqlActuals string = `select
 	coalesce(sum(size) filter (where type = 2), 0) as sent_size_total
 	, coalesce(sum(size) filter (where type = 2 and ts > now() - interval '1 day'), 0) as sent_size_1d
