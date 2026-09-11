@@ -1,4 +1,5 @@
-[![Build & Test](https://github.com/markmnl/fmsgid/actions/workflows/go.yml/badge.svg)](https://github.com/markmnl/fmsgid/actions/workflows/go.yml)
+[![Build & Test](https://github.com/markmnl/fmsgid/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/markmnl/fmsgid/actions/workflows/go.yml?query=branch%3Amain)
+[![Go 1.27+](https://img.shields.io/badge/Go-1.27%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/dl/)
 
 # fmsgid
 
@@ -25,6 +26,8 @@ FMSGID_CSV_FILE=/path/to/addresses.csv
 | `FMSGID_CSV_FILE` | Path to a CSV file to sync addresses from. When set, fmsgid watches the file for changes and automatically syncs the `address` table. When unset, CSV sync is disabled. | _(unset)_ |
 
 ## Build
+
+Requires Go 1.27 or newer.
 
 From the `src` directory:
 ```
