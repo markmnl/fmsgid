@@ -36,6 +36,14 @@ go build .
 
 This will produce an executable named `fmsgid` (or `fmsgid.exe` on Windows).
 
+### Test
+
+```
+go test ./...
+```
+
+Tests that need PostgreSQL are skipped unless `FMSGID_TEST_DATABASE_URL` is set to a connection string, e.g. `postgres://postgres:pass@127.0.0.1:5432/fmsgid_test?sslmode=disable`. They apply `dd.sql` and write and delete rows, so point them at a throwaway database only.
+
 ## Running
 
 PostgreSQL database with tables created from `dd.sql` is required. The database connection details are got from the environment and the user must have write access to these tables. Run the executable which will update environment with any variables in `.env` file alongside if present.
@@ -86,9 +94,9 @@ All routes are served over HTTPS under the `/fmsgid` path.
 | Method | Route | Description |
 |--------|-------|-------------|
 | `GET` | `/fmsgid/:address` | Lookup an fmsg address and return its details including display name, quotas, and usage. The address must be in fmsg format (`@user@example.com`). Returns `AddressDetail` JSON on success, `400` if the address is invalid, `404` if not found. |
-| `POST` | `/fmsgid` | Register a new address with default quotas, idempotently. Accepts a JSON body with `address` and optional `display_name`. Returns `201` if the address was created, `200` if it already existed (never modifies an existing row — use CSV sync to change quotas or `accepting_new` on an existing address), `400` if the address is invalid. |
-| `POST` | `/fmsgid/send` | Record a send transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. |
-| `POST` | `/fmsgid/recv` | Record a receive transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. |
+| `POST` | `/fmsgid` | Register a new address with default quotas (the `address` table's column defaults in `dd.sql`), idempotently. Accepts a JSON body with `address` and optional `display_name`. Returns `201` if the address was created, `200` if it already existed (never modifies an existing row — use CSV sync to change quotas or `accepting_new` on an existing address), `400` if the address is invalid. |
+| `POST` | `/fmsgid/send` | Record a send transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. The address is case folded, and every call is recorded, including several with the same timestamp. Returns `200`, or `400` if the body or address is invalid. |
+| `POST` | `/fmsgid/recv` | Record a receive transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. The address is case folded, and every call is recorded, including several with the same timestamp. Returns `200`, or `400` if the body or address is invalid. |
 
 ### systemd
 
