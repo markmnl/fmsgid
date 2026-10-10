@@ -35,8 +35,9 @@ type addressRow struct {
 
 // parseCSV reads a CSV file and returns address rows. The CSV must have a header
 // row with column names matching the address table columns. Only the "address"
-// column is required; others use defaults (accepting_new=true, limits=-1).
-// Malformed rows are logged and skipped.
+// column is required; a missing or empty column gets accepting_new=true and the
+// same limits as the address table's column defaults in dd.sql. Malformed rows
+// are logged and skipped.
 func parseCSV(filePath string) ([]addressRow, error) {
 	f, err := os.Open(filePath)
 	if err != nil {

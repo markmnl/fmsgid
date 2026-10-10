@@ -121,22 +121,14 @@ func getAddressDetail(c *gin.Context) {
 		return
 	}
 
-	// select actuals
-	rows, err = pool.Query(ctx, sqlActuals, addr)
+	// select actuals; an aggregate always returns one row, zeros when the
+	// address hasn't sent or received anything
+	err = pool.QueryRow(ctx, sqlActuals, addr).Scan(
+		&ad.RecvSizeTotal, &ad.RecvSizePer1d, &ad.RecvCountPer1d,
+		&ad.SendSizeTotal, &ad.SendSizePer1d, &ad.SendCountPer1d)
 	if err != nil {
 		c.AbortWithError(500, err)
 		return
-	}
-	defer rows.Close()
-
-	// no rows is possible when haven't sent or recieved anything!
-	if rows.Next() {
-		err = rows.Scan(&ad.SendSizeTotal, &ad.SendCountPer1d, &ad.SendSizePer1d,
-			&ad.RecvSizeTotal, &ad.RecvCountPer1d, &ad.RecvSizePer1d)
-		if err != nil {
-			c.AbortWithError(500, err)
-			return
-		}
 	}
 
 	c.JSON(http.StatusOK, ad)
@@ -194,7 +186,16 @@ func postAddressTx(c *gin.Context, typ int) {
 		return
 	}
 
-	_, err = pool.Exec(ctx, sqlInsertTx, tx.Address, tx.Timestamp, typ, tx.Size)
+	if !isValidFmsgAddr(tx.Address) {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+
+	// address_lower references address rows, which are keyed by the case
+	// folded address
+	addrLower := cases.Fold().String(tx.Address)
+
+	_, err = pool.Exec(ctx, sqlInsertTx, addrLower, tx.Timestamp, typ, tx.Size)
 	if err != nil {
 		c.AbortWithError(500, err)
 		return
