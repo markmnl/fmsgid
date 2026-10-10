@@ -32,6 +32,26 @@ create table if not exists address (
     limit_send_count_per_1d 	bigint	not null default 1000
 );
 
+-- quota pools: an address whose quota_pool is set (to the address_lower of
+-- another address, the pool owner) shares the pool owner's quota: it is
+-- checked against the owner's limits and the combined usage of the owner and
+-- every address whose quota_pool is the owner. NULL means the address is its
+-- own pool; the owner's usage includes its pool members' too. Pools are one
+-- level deep, so a pool owner's own quota_pool should be NULL. A nullable
+-- column without a default is added without rewriting the table.
+alter table address add column if not exists quota_pool text;
+
+do $$
+begin
+	if not exists (select 1 from pg_constraint
+			where conrelid = 'address'::regclass and conname = 'address_quota_pool_fkey') then
+		alter table address add constraint address_quota_pool_fkey
+			foreign key (quota_pool) references address (address_lower) on delete set null;
+	end if;
+end $$;
+
+create index if not exists address_quota_pool on address (quota_pool);
+
 -- one row per message sent or received; several may share a timestamp
 create table if not exists address_tx (
 	id		bigserial			primary key,

@@ -87,14 +87,31 @@ Available columns:
 
 See `addresses.csv.example` for a complete example with all columns.
 
+## Quota pools
+
+Addresses can share one quota. The nullable `address.quota_pool` column holds the `address_lower` (the case folded address) of the pool owner; `NULL` means the address is its own pool. For example linked addresses such as `@alice_bot@example.com` can share the quota of `@alice@example.com`:
+
+```sql
+update address set quota_pool = '@alice@example.com'
+where address_lower = '@alice_bot@example.com';
+```
+
+- An address in a pool is checked against the pool owner's limits (`limit_*`) and the combined usage of the owner and every address whose `quota_pool` is the owner. Its own limits are kept but not used while it is pooled.
+- The pool owner reports the same combined usage, so a pool member's usage counts against the owner too.
+- `accepting_new` and `display_name` stay per address.
+- Pools are one level deep: a pool owner's own `quota_pool` should be `NULL`. `POST /fmsgid` enforces that; anything writing the column directly should too.
+- `quota_pool` references `address (address_lower)`, so the owner must exist first; deleting the owner sets its members' `quota_pool` back to `NULL`.
+
+Set `quota_pool` with `POST /fmsgid`, or have the system syncing your identity provider update the column directly. A role that does so needs `UPDATE (quota_pool)` on `address` besides `SELECT`.
+
 ## API Routes
 
 All routes are served over HTTPS under the `/fmsgid` path.
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| `GET` | `/fmsgid/:address` | Lookup an fmsg address and return its details including display name, quotas, and usage. The address must be in fmsg format (`@user@example.com`). Returns `AddressDetail` JSON on success, `400` if the address is invalid, `404` if not found. |
-| `POST` | `/fmsgid` | Register a new address with default quotas (the `address` table's column defaults in `dd.sql`), idempotently. Accepts a JSON body with `address` and optional `display_name`. Returns `201` if the address was created, `200` if it already existed (never modifies an existing row — use CSV sync to change quotas or `accepting_new` on an existing address), `400` if the address is invalid. |
+| `GET` | `/fmsgid/:address` | Lookup an fmsg address and return its details including display name, quotas, and usage. The address must be in fmsg format (`@user@example.com`). Returns `AddressDetail` JSON on success, `400` if the address is invalid, `404` if not found. For an address in a [quota pool](#quota-pools) the limits are the pool owner's, the usage is the whole pool's and `quotaPool` is the pool owner's address; `quotaPool` is omitted otherwise. `acceptingNew` is always the address's own. |
+| `POST` | `/fmsgid` | Register an address, idempotently. Accepts a JSON body with `address` and optional `display_name`, `accepting_new` (bool) and `quota_pool` (an fmsg address, see [Quota pools](#quota-pools)). A new address takes the `address` table's column defaults in `dd.sql` except for `accepting_new` and `quota_pool` when given. An existing address is left as it is except for `accepting_new` and `quota_pool` when given (`display_name` and quotas are never changed — use CSV sync for those). Setting `accepting_new` `false` stops the address accepting new messages; setting it `true` again reinstates it. `quota_pool` `""` or the address itself takes the address out of any pool. Returns `201` if the address was created, `200` if it already existed, both with `{"created":bool,"reinstated":bool}` where `reinstated` is `true` when the address existed, wasn't accepting new messages and now is. Returns `400` if the body or an address is invalid, `422` with `{"error":"..."}` if `quota_pool` names an address that doesn't exist or is in another pool, or the address owns a pool itself. |
 | `POST` | `/fmsgid/send` | Record a send transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. The address is case folded, and every call is recorded, including several with the same timestamp. Returns `200`, or `400` if the body or address is invalid. |
 | `POST` | `/fmsgid/recv` | Record a receive transaction. Accepts an `AddressTx` JSON body with `address`, `ts` (timestamp), and `size`. The address is case folded, and every call is recorded, including several with the same timestamp. Returns `200`, or `400` if the body or address is invalid. |
 
