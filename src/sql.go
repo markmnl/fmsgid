@@ -61,13 +61,15 @@ const sqlIsPoolOwner string = `select exists (select 1 from address where quota_
 
 // sqlActuals sums the recorded messages of a quota pool: the pool owner $1
 // and every address whose quota_pool is $1. For an address in no pool, and
-// with no pool members, that is just its own messages. Columns are in the
-// order getAddressDetail scans them into AddressDetail.
+// with no pool members, that is just its own messages. A release (types 3
+// and 4) takes a message deleted for good off the size totals, never below
+// zero, but not off the daily usage. Columns are in the order
+// getAddressDetail scans them into AddressDetail.
 const sqlActuals string = `select
-	coalesce(sum(size) filter (where type = 1), 0) as recv_size_total
+	greatest(0, coalesce(sum(size) filter (where type = 1), 0) - coalesce(sum(size) filter (where type = 3), 0)) as recv_size_total
 	, coalesce(sum(size) filter (where type = 1 and ts > now() - interval '1 day'), 0) as recv_size_1d
 	, count(*) filter (where type = 1 and ts > now() - interval '1 day') as recv_count_1d
-	, coalesce(sum(size) filter (where type = 2), 0) as send_size_total
+	, greatest(0, coalesce(sum(size) filter (where type = 2), 0) - coalesce(sum(size) filter (where type = 4), 0)) as send_size_total
 	, coalesce(sum(size) filter (where type = 2 and ts > now() - interval '1 day'), 0) as send_size_1d
 	, count(*) filter (where type = 2 and ts > now() - interval '1 day') as send_count_1d
 from

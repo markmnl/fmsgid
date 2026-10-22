@@ -61,6 +61,8 @@ func serveRoute(method, path, body string) *httptest.ResponseRecorder {
 	r.POST("/fmsgid", postCreateAddress)
 	r.POST("/fmsgid/send", postAddressTxSend)
 	r.POST("/fmsgid/recv", postAddressTxRecv)
+	r.POST("/fmsgid/send/release", postAddressTxSendRelease)
+	r.POST("/fmsgid/recv/release", postAddressTxRecvRelease)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))

@@ -84,6 +84,53 @@ func TestAddressDetail_Usage(t *testing.T) {
 	}
 }
 
+// TestAddressDetail_Release checks a release takes a message's size off the
+// size total, never below zero, and leaves the daily usage as it was.
+func TestAddressDetail_Release(t *testing.T) {
+	testDB(t)
+	deleteUsageRows(t, pool)
+	t.Cleanup(func() { deleteUsageRows(t, pool) })
+
+	if w := serveRoute("POST", "/fmsgid", `{"address":"@freed@usagetest.example"}`); w.Code != http.StatusCreated {
+		t.Fatalf("create address: status %d, want 201", w.Code)
+	}
+	now := float64(time.Now().UnixMicro()) / 1e6
+	tx := func(route string, size int) {
+		t.Helper()
+		body := fmt.Sprintf(`{"address":"@Freed@usagetest.example","ts":%f,"size":%d}`, now, size)
+		if w := serveRoute("POST", route, body); w.Code != http.StatusOK {
+			t.Fatalf("POST %s: status %d, want 200", route, w.Code)
+		}
+	}
+	tx("/fmsgid/recv", 500)
+	tx("/fmsgid/recv", 300)
+	tx("/fmsgid/send", 70)
+	tx("/fmsgid/recv/release", 300)
+	tx("/fmsgid/send/release", 100) // more than was sent: the total stops at 0
+
+	w := serveRoute("GET", "/fmsgid/@freed@usagetest.example", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET: status %d, want 200", w.Code)
+	}
+	var ad AddressDetail
+	if err := json.Unmarshal(w.Body.Bytes(), &ad); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{
+		"RecvSizeTotal": ad.RecvSizeTotal, "RecvSizePer1d": ad.RecvSizePer1d, "RecvCountPer1d": ad.RecvCountPer1d,
+		"SendSizeTotal": ad.SendSizeTotal, "SendSizePer1d": ad.SendSizePer1d, "SendCountPer1d": ad.SendCountPer1d,
+	}
+	want := map[string]int64{
+		"RecvSizeTotal": 500, "RecvSizePer1d": 800, "RecvCountPer1d": 2,
+		"SendSizeTotal": 0, "SendSizePer1d": 70, "SendCountPer1d": 1,
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %d, want %d", k, got[k], v)
+		}
+	}
+}
+
 // TestAddressDetail_NoUsage checks an address that has sent and received
 // nothing reports zero usage.
 func TestAddressDetail_NoUsage(t *testing.T) {

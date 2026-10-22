@@ -31,6 +31,11 @@ func init() {
 const (
 	TypeRecv = 1
 	TypeSend = 2
+	// A release gives back the storage of a message deleted for good: it
+	// takes its size off the total, but not off the daily usage, which
+	// counts what was sent and received that day.
+	TypeRecvRelease = 3
+	TypeSendRelease = 4
 )
 
 type AddressTx struct {
@@ -313,6 +318,14 @@ func postAddressTxRecv(c *gin.Context) {
 	postAddressTx(c, TypeRecv)
 }
 
+func postAddressTxSendRelease(c *gin.Context) {
+	postAddressTx(c, TypeSendRelease)
+}
+
+func postAddressTxRecvRelease(c *gin.Context) {
+	postAddressTx(c, TypeRecvRelease)
+}
+
 func postAddressTx(c *gin.Context, typ int) {
 	ctx := c.Request.Context()
 
@@ -367,6 +380,8 @@ func main() {
 	r.POST("/fmsgid", postCreateAddress)
 	r.POST("/fmsgid/send", postAddressTxSend)
 	r.POST("/fmsgid/recv", postAddressTxRecv)
+	r.POST("/fmsgid/send/release", postAddressTxSendRelease)
+	r.POST("/fmsgid/recv/release", postAddressTxRecvRelease)
 	err = r.Run(":" + port)
 	if err != nil {
 		log.Fatalf("ERROR: Running gin engine: %s", err)
