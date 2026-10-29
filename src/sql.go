@@ -56,6 +56,10 @@ const sqlSelectAcceptingNewForUpdate string = `select accepting_new from address
 // locking the row so it can't join another pool until the transaction ends.
 const sqlSelectQuotaPoolForShare string = `select quota_pool from address where address_lower = $1 for share;`
 
+// sqlSelectQuotaPoolForUpdate reads an existing address's quota_pool, locking
+// the row for the rest of the transaction.
+const sqlSelectQuotaPoolForUpdate string = `select quota_pool from address where address_lower = $1 for update;`
+
 // sqlIsPoolOwner reports whether any address is in the given address's pool.
 const sqlIsPoolOwner string = `select exists (select 1 from address where quota_pool = $1 and address_lower <> $1);`
 

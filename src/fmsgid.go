@@ -56,6 +56,12 @@ type CreateAddressReq struct {
 	// address is new or already exists. "" or the address itself takes the
 	// address out of any pool. When omitted quota_pool is left as it is.
 	QuotaPool *string `json:"quota_pool"`
+	// Claim, with QuotaPool, registers the address for that pool only: it is
+	// created in the pool, or, when it already exists, used only if it is
+	// already in that pool. An existing address anywhere else is refused with
+	// claimError and nothing is changed, so a caller deriving an address from
+	// its owner's name can't take over an address someone else holds.
+	Claim bool `json:"claim"`
 }
 
 // CreateAddressResp is the result of POST /fmsgid.
@@ -72,6 +78,12 @@ type CreateAddressResp struct {
 type quotaPoolError string
 
 func (e quotaPoolError) Error() string { return string(e) }
+
+// claimError is a claim (CreateAddressReq.Claim) of an address that already
+// exists outside the claimed pool.
+type claimError string
+
+func (e claimError) Error() string { return string(e) }
 
 type AddressDetail struct {
 	Address             string   `json:"address"`
@@ -196,11 +208,20 @@ func postCreateAddress(c *gin.Context) {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
+	if req.Claim && req.QuotaPool == nil {
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "claim needs quota_pool"})
+		return
+	}
 
 	resp, err := registerAddress(ctx, req)
 	var qpErr quotaPoolError
 	if errors.As(err, &qpErr) {
 		c.AbortWithStatusJSON(http.StatusUnprocessableEntity, gin.H{"error": qpErr.Error()})
+		return
+	}
+	var clErr claimError
+	if errors.As(err, &clErr) {
+		c.AbortWithStatusJSON(http.StatusConflict, gin.H{"error": clErr.Error()})
 		return
 	}
 	if err != nil {
@@ -274,6 +295,18 @@ func registerAddress(ctx context.Context, req CreateAddressReq) (CreateAddressRe
 		return resp, err
 	}
 	resp.Created = tag.RowsAffected() == 1
+
+	// a claimed address that already existed must already be in the pool
+	// (nil: its own pool)
+	if !resp.Created && req.Claim {
+		var current *string
+		if err := tx.QueryRow(ctx, sqlSelectQuotaPoolForUpdate, addrLower).Scan(&current); err != nil {
+			return resp, err
+		}
+		if (current == nil) != (quotaPool == nil) || (current != nil && *current != *quotaPool) {
+			return resp, claimError("address already exists outside that quota pool")
+		}
+	}
 
 	if !resp.Created && (req.AcceptingNew != nil || req.QuotaPool != nil) {
 		var wasAccepting bool
