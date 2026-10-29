@@ -291,6 +291,56 @@ func TestPostCreateAddress_QuotaPool(t *testing.T) {
 		http.StatusOK, CreateAddressResp{})
 }
 
+// TestPostCreateAddress_Claim checks that a claim registers an address only
+// for its pool: new, or already in that pool. An address someone else holds,
+// in no pool or another one, is refused and left unchanged.
+func TestPostCreateAddress_Claim(t *testing.T) {
+	poolTestDB(t)
+
+	postAddress(t, `{"address":"@alice@pooltest.example"}`, http.StatusCreated, CreateAddressResp{Created: true})
+	postAddress(t, `{"address":"@carol@pooltest.example"}`, http.StatusCreated, CreateAddressResp{Created: true})
+
+	// a new address is created in the pool
+	postAddress(t, `{"address":"@alice_bot@pooltest.example","quota_pool":"@alice@pooltest.example","claim":true}`,
+		http.StatusCreated, CreateAddressResp{Created: true})
+	if qp := quotaPoolOf(t, "@alice_bot@pooltest.example"); qp == nil || *qp != "@alice@pooltest.example" {
+		t.Fatalf("quota_pool %v, want @alice@pooltest.example", qp)
+	}
+
+	// one already in the pool is used, and may be reinstated
+	postAddress(t, `{"address":"@alice_bot@pooltest.example","accepting_new":false}`, http.StatusOK, CreateAddressResp{})
+	postAddress(t, `{"address":"@ALICE_BOT@pooltest.example","accepting_new":true,"quota_pool":"@Alice@pooltest.example","claim":true}`,
+		http.StatusOK, CreateAddressResp{Reinstated: true})
+
+	// someone else's address, in no pool: refused and unchanged
+	postAddress(t, `{"address":"@carol_bot@pooltest.example","accepting_new":false}`, http.StatusCreated, CreateAddressResp{Created: true})
+	postAddress(t, `{"address":"@carol_bot@pooltest.example","accepting_new":true,"quota_pool":"@carol@pooltest.example","claim":true}`,
+		http.StatusConflict, CreateAddressResp{})
+	if qp := quotaPoolOf(t, "@carol_bot@pooltest.example"); qp != nil {
+		t.Fatalf("refused claim set quota_pool %q", *qp)
+	}
+	if acceptingNewOf(t, "@carol_bot@pooltest.example") {
+		t.Fatal("refused claim reinstated the address")
+	}
+
+	// an address in another pool: refused and unchanged
+	postAddress(t, `{"address":"@alice_bot@pooltest.example","quota_pool":"@carol@pooltest.example","claim":true}`,
+		http.StatusConflict, CreateAddressResp{})
+	if qp := quotaPoolOf(t, "@alice_bot@pooltest.example"); qp == nil || *qp != "@alice@pooltest.example" {
+		t.Fatalf("refused claim moved the address to %v", qp)
+	}
+
+	// claiming an address for its own pool (the address itself) needs it to
+	// be in no pool
+	postAddress(t, `{"address":"@carol@pooltest.example","quota_pool":"@carol@pooltest.example","claim":true}`,
+		http.StatusOK, CreateAddressResp{})
+	postAddress(t, `{"address":"@alice_bot@pooltest.example","quota_pool":"","claim":true}`,
+		http.StatusConflict, CreateAddressResp{})
+
+	// a claim names a pool
+	postAddress(t, `{"address":"@dave@pooltest.example","claim":true}`, http.StatusBadRequest, CreateAddressResp{})
+}
+
 // TestPostCreateAddress_AcceptingNew checks disabling and reinstating an
 // address through POST /fmsgid, and that the response says when an address
 // was reinstated.
