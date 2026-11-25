@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -33,6 +34,67 @@ type addressRow struct {
 	LimitSendCountPer1d int64
 }
 
+type csvColumns struct {
+	address             int
+	displayName         int
+	acceptingNew        int
+	limitRecvSizeTotal  int
+	limitRecvSizePerMsg int
+	limitRecvSizePer1d  int
+	limitRecvCountPer1d int
+	limitSendSizeTotal  int
+	limitSendSizePerMsg int
+	limitSendSizePer1d  int
+	limitSendCountPer1d int
+}
+
+func resolveCSVColumns(header []string) (csvColumns, error) {
+	colIdx := make(map[string]int, len(header))
+	for i, name := range header {
+		colIdx[strings.TrimSpace(strings.ToLower(name))] = i
+	}
+	col := func(name string) int {
+		if idx, ok := colIdx[name]; ok {
+			return idx
+		}
+		return -1
+	}
+	cols := csvColumns{
+		address:             col("address"),
+		displayName:         col("display_name"),
+		acceptingNew:        col("accepting_new"),
+		limitRecvSizeTotal:  col("limit_recv_size_total"),
+		limitRecvSizePerMsg: col("limit_recv_size_per_msg"),
+		limitRecvSizePer1d:  col("limit_recv_size_per_1d"),
+		limitRecvCountPer1d: col("limit_recv_count_per_1d"),
+		limitSendSizeTotal:  col("limit_send_size_total"),
+		limitSendSizePerMsg: col("limit_send_size_per_msg"),
+		limitSendSizePer1d:  col("limit_send_size_per_1d"),
+		limitSendCountPer1d: col("limit_send_count_per_1d"),
+	}
+	if cols.address < 0 {
+		return csvColumns{}, fmt.Errorf("CSV missing required 'address' column in header")
+	}
+	return cols, nil
+}
+
+func parseOptionalInt64(record []string, idx int, csvLine int, colName string, dest *int64) bool {
+	if idx < 0 || idx >= len(record) {
+		return true
+	}
+	val := strings.TrimSpace(record[idx])
+	if val == "" {
+		return true
+	}
+	n, err := strconv.ParseInt(val, 10, 64)
+	if err != nil {
+		log.Printf("WARN: CSV line %d: invalid %s %q, skipping row", csvLine, colName, val)
+		return false
+	}
+	*dest = n
+	return true
+}
+
 // parseCSV reads a CSV file and returns address rows. The CSV must have a header
 // row with column names matching the address table columns. Only the "address"
 // column is required; a missing or empty column gets accepting_new=true and the
@@ -47,40 +109,39 @@ func parseCSV(filePath string) ([]addressRow, error) {
 
 	reader := csv.NewReader(f)
 	reader.TrimLeadingSpace = true
+	reader.ReuseRecord = true
 
-	records, err := reader.ReadAll()
+	header, err := reader.Read()
+	if errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("CSV file is empty (no header row)")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("reading CSV: %w", err)
 	}
 
-	if len(records) < 1 {
-		return nil, fmt.Errorf("CSV file is empty (no header row)")
-	}
-
-	// Build column index from header
-	header := records[0]
-	colIdx := make(map[string]int, len(header))
-	for i, name := range header {
-		colIdx[strings.TrimSpace(strings.ToLower(name))] = i
-	}
-
-	addrCol, ok := colIdx["address"]
-	if !ok {
-		return nil, fmt.Errorf("CSV missing required 'address' column in header")
+	cols, err := resolveCSVColumns(header)
+	if err != nil {
+		return nil, err
 	}
 
 	fold := cases.Fold()
 	var rows []addressRow
 
-	for lineNum, record := range records[1:] {
-		csvLine := lineNum + 2 // 1-indexed, skip header
+	for csvLine := 2; ; csvLine++ {
+		record, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading CSV: %w", err)
+		}
 
-		if len(record) <= addrCol {
+		if len(record) <= cols.address {
 			log.Printf("WARN: CSV line %d: not enough columns, skipping", csvLine)
 			continue
 		}
 
-		addr := strings.TrimSpace(record[addrCol])
+		addr := strings.TrimSpace(record[cols.address])
 		if addr == "" {
 			log.Printf("WARN: CSV line %d: empty address, skipping", csvLine)
 			continue
@@ -100,11 +161,11 @@ func parseCSV(filePath string) ([]addressRow, error) {
 			LimitSendCountPer1d: 1000,
 		}
 
-		if idx, ok := colIdx["display_name"]; ok && idx < len(record) {
-			row.DisplayName = strings.TrimSpace(record[idx])
+		if cols.displayName >= 0 && cols.displayName < len(record) {
+			row.DisplayName = strings.TrimSpace(record[cols.displayName])
 		}
-		if idx, ok := colIdx["accepting_new"]; ok && idx < len(record) {
-			val := strings.TrimSpace(strings.ToLower(record[idx]))
+		if cols.acceptingNew >= 0 && cols.acceptingNew < len(record) {
+			val := strings.TrimSpace(strings.ToLower(record[cols.acceptingNew]))
 			if val != "" {
 				b, err := strconv.ParseBool(val)
 				if err != nil {
@@ -115,32 +176,14 @@ func parseCSV(filePath string) ([]addressRow, error) {
 			}
 		}
 
-		parseOK := true
-		parseInt64Col := func(colName string, dest *int64) {
-			if idx, ok := colIdx[colName]; ok && idx < len(record) {
-				val := strings.TrimSpace(record[idx])
-				if val != "" {
-					n, err := strconv.ParseInt(val, 10, 64)
-					if err != nil {
-						log.Printf("WARN: CSV line %d: invalid %s %q, skipping row", csvLine, colName, val)
-						parseOK = false
-						return
-					}
-					*dest = n
-				}
-			}
-		}
-
-		parseInt64Col("limit_recv_size_total", &row.LimitRecvSizeTotal)
-		parseInt64Col("limit_recv_size_per_msg", &row.LimitRecvSizePerMsg)
-		parseInt64Col("limit_recv_size_per_1d", &row.LimitRecvSizePer1d)
-		parseInt64Col("limit_recv_count_per_1d", &row.LimitRecvCountPer1d)
-		parseInt64Col("limit_send_size_total", &row.LimitSendSizeTotal)
-		parseInt64Col("limit_send_size_per_msg", &row.LimitSendSizePerMsg)
-		parseInt64Col("limit_send_size_per_1d", &row.LimitSendSizePer1d)
-		parseInt64Col("limit_send_count_per_1d", &row.LimitSendCountPer1d)
-
-		if !parseOK {
+		if !parseOptionalInt64(record, cols.limitRecvSizeTotal, csvLine, "limit_recv_size_total", &row.LimitRecvSizeTotal) ||
+			!parseOptionalInt64(record, cols.limitRecvSizePerMsg, csvLine, "limit_recv_size_per_msg", &row.LimitRecvSizePerMsg) ||
+			!parseOptionalInt64(record, cols.limitRecvSizePer1d, csvLine, "limit_recv_size_per_1d", &row.LimitRecvSizePer1d) ||
+			!parseOptionalInt64(record, cols.limitRecvCountPer1d, csvLine, "limit_recv_count_per_1d", &row.LimitRecvCountPer1d) ||
+			!parseOptionalInt64(record, cols.limitSendSizeTotal, csvLine, "limit_send_size_total", &row.LimitSendSizeTotal) ||
+			!parseOptionalInt64(record, cols.limitSendSizePerMsg, csvLine, "limit_send_size_per_msg", &row.LimitSendSizePerMsg) ||
+			!parseOptionalInt64(record, cols.limitSendSizePer1d, csvLine, "limit_send_size_per_1d", &row.LimitSendSizePer1d) ||
+			!parseOptionalInt64(record, cols.limitSendCountPer1d, csvLine, "limit_send_count_per_1d", &row.LimitSendCountPer1d) {
 			continue
 		}
 
@@ -174,11 +217,13 @@ func syncCSV(ctx context.Context, pool *pgxpool.Pool, addresses []addressRow) er
 	br := tx.SendBatch(ctx, batch)
 	for range addresses {
 		if _, err := br.Exec(); err != nil {
-			br.Close()
+			_ = br.Close()
 			return fmt.Errorf("upserting address: %w", err)
 		}
 	}
-	br.Close()
+	if err := br.Close(); err != nil {
+		return fmt.Errorf("closing upsert batch: %w", err)
+	}
 
 	// Disable addresses not present in the CSV
 	if len(addressLowers) > 0 {
@@ -198,11 +243,10 @@ func syncCSV(ctx context.Context, pool *pgxpool.Pool, addresses []addressRow) er
 // startCSVWatcher performs an initial CSV sync and then watches the file for changes,
 // re-syncing on each write or replace. It blocks until the context is cancelled.
 func startCSVWatcher(ctx context.Context, pool *pgxpool.Pool, filePath string) {
-	// mu serializes concurrent sync calls that may be triggered by the debounce timer.
-	var mu sync.Mutex
 	doSync := func() {
-		mu.Lock()
-		defer mu.Unlock()
+		if ctx.Err() != nil {
+			return
+		}
 		addresses, err := parseCSV(filePath)
 		if err != nil {
 			log.Printf("ERROR: CSV parse: %s", err)
@@ -237,11 +281,21 @@ func startCSVWatcher(ctx context.Context, pool *pgxpool.Pool, filePath string) {
 	log.Printf("INFO: Watching CSV file %s for changes", filePath)
 
 	var debounce *time.Timer
+	var debounceC <-chan time.Time
+	defer func() {
+		if debounce != nil {
+			debounce.Stop()
+		}
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-debounceC:
+			debounce = nil
+			debounceC = nil
+			doSync()
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
@@ -251,11 +305,19 @@ func startCSVWatcher(ctx context.Context, pool *pgxpool.Pool, filePath string) {
 				continue
 			}
 			if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) != 0 {
-				// Debounce: wait 500ms after last event before syncing
-				if debounce != nil {
-					debounce.Stop()
+				// Debounce: wait 500ms after last event before syncing.
+				if debounce == nil {
+					debounce = time.NewTimer(500 * time.Millisecond)
+				} else {
+					if !debounce.Stop() {
+						select {
+						case <-debounce.C:
+						default:
+						}
+					}
+					debounce.Reset(500 * time.Millisecond)
 				}
-				debounce = time.AfterFunc(500*time.Millisecond, doSync)
+				debounceC = debounce.C
 			}
 		case err, ok := <-watcher.Errors:
 			if !ok {
