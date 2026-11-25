@@ -309,12 +309,6 @@ func startCSVWatcher(ctx context.Context, pool *pgxpool.Pool, filePath string) {
 				if debounce == nil {
 					debounce = time.NewTimer(500 * time.Millisecond)
 				} else {
-					if !debounce.Stop() {
-						select {
-						case <-debounce.C:
-						default:
-						}
-					}
 					debounce.Reset(500 * time.Millisecond)
 				}
 				debounceC = debounce.C

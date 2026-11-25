@@ -433,6 +433,7 @@ func main() {
 			log.Fatalf("ERROR: Running HTTP server: %s", err)
 		}
 	case <-ctx.Done():
+		stop()
 		log.Println("INFO: Shutting down")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

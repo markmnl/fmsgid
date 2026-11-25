@@ -155,6 +155,29 @@ func TestAddressDetail_NoUsage(t *testing.T) {
 	}
 }
 
+// TestAddressDetail_NullDisplayName checks an address inserted with a NULL
+// display_name returns 200 with displayName "".
+func TestAddressDetail_NullDisplayName(t *testing.T) {
+	testDB(t)
+	deleteUsageRows(t, pool)
+	t.Cleanup(func() { deleteUsageRows(t, pool) })
+
+	mustExec(t, pool, `insert into address (address_lower, address, display_name) values ($1, $2, null)`,
+		"@nulldisp@"+usageDomain, "@NullDisp@"+usageDomain)
+
+	w := serveRoute("GET", "/fmsgid/@nulldisp@"+usageDomain, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET: status %d, want 200 (%s)", w.Code, w.Body.String())
+	}
+	var ad AddressDetail
+	if err := json.Unmarshal(w.Body.Bytes(), &ad); err != nil {
+		t.Fatal(err)
+	}
+	if ad.Address != "@NullDisp@"+usageDomain || ad.DisplayName != "" {
+		t.Errorf("got address=%q displayName=%q, want @NullDisp@%s and empty", ad.Address, ad.DisplayName, usageDomain)
+	}
+}
+
 func TestPostAddressTx_InvalidAddress(t *testing.T) {
 	for _, route := range []string{"/fmsgid/send", "/fmsgid/recv"} {
 		for _, addr := range []string{"", "alice@example.com", "@alice"} {
