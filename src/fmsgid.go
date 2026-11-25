@@ -7,7 +7,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v4"
@@ -126,6 +130,13 @@ func isValidFmsgAddr(addr string) bool {
 	return strings.Count(addr, "@") == 2
 }
 
+func stringPtrEqual(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 func getAddressDetail(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -144,39 +155,21 @@ func getAddressDetail(c *gin.Context) {
 	// collapse address using Unicode case folding
 	addr = cases.Fold().String(addr)
 
-	rows, err := pool.Query(ctx, sqlSelectAddressDetail, addr)
-	if err != nil {
-		c.AbortWithError(500, err)
-		return
-	}
-	defer rows.Close()
-
-	if !rows.Next() {
-		// address not found
+	var ad AddressDetail
+	// limits and actuals are the quota pool's: the pool owner's when the
+	// address is in a pool, else its own
+	err := pool.QueryRow(ctx, sqlSelectAddressDetail, addr).Scan(
+		&ad.Address, &ad.DisplayName, &ad.AcceptingNew, &ad.LimitRecvSizeTotal,
+		&ad.LimitRecvSizePerMsg, &ad.LimitRecvSizePer1d, &ad.LimitRecvCountPer1d,
+		&ad.LimitSendSizeTotal, &ad.LimitSendSizePerMsg, &ad.LimitSendSizePer1d,
+		&ad.LimitSendCountPer1d, &ad.QuotaPool,
+		&ad.RecvSizeTotal, &ad.RecvSizePer1d, &ad.RecvCountPer1d,
+		&ad.SendSizeTotal, &ad.SendSizePer1d, &ad.SendCountPer1d,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
 		c.AbortWithStatus(404)
 		return
 	}
-
-	var ad AddressDetail
-	var poolOwner string
-
-	// the limits are the quota pool's: the pool owner's when the address is in
-	// a pool, else its own
-	err = rows.Scan(&ad.Address, &ad.DisplayName, &ad.AcceptingNew, &ad.LimitRecvSizeTotal,
-		&ad.LimitRecvSizePerMsg, &ad.LimitRecvSizePer1d, &ad.LimitRecvCountPer1d,
-		&ad.LimitSendSizeTotal, &ad.LimitSendSizePerMsg, &ad.LimitSendSizePer1d,
-		&ad.LimitSendCountPer1d, &poolOwner, &ad.QuotaPool)
-	if err != nil {
-		c.AbortWithError(500, err)
-		return
-	}
-	rows.Close()
-
-	// select actuals summed over the quota pool; an aggregate always returns
-	// one row, zeros when the pool hasn't sent or received anything
-	err = pool.QueryRow(ctx, sqlActuals, poolOwner).Scan(
-		&ad.RecvSizeTotal, &ad.RecvSizePer1d, &ad.RecvCountPer1d,
-		&ad.SendSizeTotal, &ad.SendSizePer1d, &ad.SendCountPer1d)
 	if err != nil {
 		c.AbortWithError(500, err)
 		return
@@ -194,7 +187,7 @@ func postCreateAddress(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	var req CreateAddressReq
-	if err := c.BindJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("WARN: Parsing CreateAddressReq: %s\n", err)
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
@@ -296,35 +289,31 @@ func registerAddress(ctx context.Context, req CreateAddressReq) (CreateAddressRe
 	}
 	resp.Created = tag.RowsAffected() == 1
 
-	// a claimed address that already existed must already be in the pool
-	// (nil: its own pool)
-	if !resp.Created && req.Claim {
-		var current *string
-		if err := tx.QueryRow(ctx, sqlSelectQuotaPoolForUpdate, addrLower).Scan(&current); err != nil {
-			return resp, err
-		}
-		if (current == nil) != (quotaPool == nil) || (current != nil && *current != *quotaPool) {
-			return resp, claimError("address already exists outside that quota pool")
-		}
-	}
-
-	if !resp.Created && (req.AcceptingNew != nil || req.QuotaPool != nil) {
+	if !resp.Created && (req.Claim || req.AcceptingNew != nil || req.QuotaPool != nil) {
+		var currentPool *string
 		var wasAccepting bool
-		if err := tx.QueryRow(ctx, sqlSelectAcceptingNewForUpdate, addrLower).Scan(&wasAccepting); err != nil {
+		if err := tx.QueryRow(ctx, sqlSelectAddressStateForUpdate, addrLower).Scan(&currentPool, &wasAccepting); err != nil {
 			return resp, err
+		}
+		// a claimed address that already existed must already be in the pool
+		// (nil: its own pool)
+		if req.Claim && !stringPtrEqual(currentPool, quotaPool) {
+			return resp, claimError("address already exists outside that quota pool")
 		}
 		var set []string
 		args := []any{addrLower}
-		if req.AcceptingNew != nil {
+		if req.AcceptingNew != nil && *req.AcceptingNew != wasAccepting {
 			args = append(args, *req.AcceptingNew)
 			set = append(set, fmt.Sprintf("accepting_new = $%d", len(args)))
 		}
-		if req.QuotaPool != nil {
+		if req.QuotaPool != nil && !stringPtrEqual(currentPool, quotaPool) {
 			args = append(args, quotaPool)
 			set = append(set, fmt.Sprintf("quota_pool = $%d", len(args)))
 		}
-		if _, err := tx.Exec(ctx, "update address set "+strings.Join(set, ", ")+" where address_lower = $1;", args...); err != nil {
-			return resp, err
+		if len(set) > 0 {
+			if _, err := tx.Exec(ctx, "update address set "+strings.Join(set, ", ")+" where address_lower = $1;", args...); err != nil {
+				return resp, err
+			}
 		}
 		resp.Reinstated = !wasAccepting && req.AcceptingNew != nil && *req.AcceptingNew
 	}
@@ -363,8 +352,7 @@ func postAddressTx(c *gin.Context, typ int) {
 	ctx := c.Request.Context()
 
 	var tx AddressTx
-	err := c.BindJSON(&tx)
-	if err != nil {
+	if err := c.ShouldBindJSON(&tx); err != nil {
 		log.Printf("WARN: Parsing AddressTx: %s\n", err)
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
@@ -379,12 +367,11 @@ func postAddressTx(c *gin.Context, typ int) {
 	// folded address
 	addrLower := cases.Fold().String(tx.Address)
 
-	_, err = pool.Exec(ctx, sqlInsertTx, addrLower, tx.Timestamp, typ, tx.Size)
+	_, err := pool.Exec(ctx, sqlInsertTx, addrLower, tx.Timestamp, typ, tx.Size)
 	if err != nil {
 		c.AbortWithError(500, err)
 		return
 	}
-
 }
 
 func main() {
@@ -396,12 +383,17 @@ func main() {
 	defer pool.Close()
 	log.Println("INFO: Database initialized")
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	var wg sync.WaitGroup
 	// Start CSV sync if configured
-	csvFile := os.Getenv("FMSGID_CSV_FILE")
-	if csvFile != "" {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		go startCSVWatcher(ctx, pool, csvFile)
+	if csvFile := os.Getenv("FMSGID_CSV_FILE"); csvFile != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			startCSVWatcher(ctx, pool, csvFile)
+		}()
 	}
 
 	port := os.Getenv("FMSGID_PORT")
@@ -415,8 +407,39 @@ func main() {
 	r.POST("/fmsgid/recv", postAddressTxRecv)
 	r.POST("/fmsgid/send/release", postAddressTxSendRelease)
 	r.POST("/fmsgid/recv/release", postAddressTxRecvRelease)
-	err = r.Run(":" + port)
-	if err != nil {
-		log.Fatalf("ERROR: Running gin engine: %s", err)
+
+	srv := &http.Server{
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
+
+	serveErr := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErr <- err
+		}
+		close(serveErr)
+	}()
+
+	select {
+	case err := <-serveErr:
+		if err != nil {
+			stop()
+			wg.Wait()
+			log.Fatalf("ERROR: Running HTTP server: %s", err)
+		}
+	case <-ctx.Done():
+		stop()
+		log.Println("INFO: Shutting down")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("ERROR: HTTP server shutdown: %s", err)
+		}
+	}
+	wg.Wait()
 }
